@@ -1,0 +1,112 @@
+---
+    - name: Install yum utils
+      yum:
+        name: yum-utils
+        state: latest
+
+    - name: Install device-mapper-persistent-data
+      yum:
+        name: device-mapper-persistent-data
+        state: latest
+
+    - name: Install lvm2
+      yum:
+        name: lvm2
+        state: latest
+
+    - name: Add Docker repo
+      get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docer-ce.repo
+      become: yes
+
+    - name: Install Docker
+      package:
+        name: docker-ce
+        state: latest
+      become: yes
+
+    - name: Install pip
+      package: name=python-pip state=present
+    - name: install docker-py package
+      pip: name=docker-py
+
+    - name: Start Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Install Google Cloud SDK
+      shell: gcloud auth configure-docker -q
+
+    - name: Download and Extract Google Cloud SDK into /temp
+      unarchive:
+        src: "https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz"
+        dest: /tmp
+        remote_src: yes
+
+    - name: Install GC SDK
+      shell: /tmp/google-cloud-sdk/install.sh --usage-reporting=false --path-update=true --quiet
+
+    - name: Specified Credentials for GCR 
+      shell: "{{ item }}"
+      with_items:
+        - /tmp/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file  /home/centos/gcp_credential.json
+        - docker login -u _json_key --password-stdin https://us.gcr.io < /home/centos/gcp_credential.json
+
+    - name: Create directory for Docker Playbook
+      file:
+        path: "{{ item }}"
+        state: directory
+      with_items:
+        - /var/lib/jenkins/workspace/conteiner_frontend_job
+        - /var/lib/jenkins/workspace/conteiner_backend_job
+
+    - name: Copy Ansible Playbook to workspace of frontend (Jenkins)
+      template:
+        src: "{{ workspace }}/templates/frontend.yml"
+        dest: /var/lib/jenkins/workspace/conteiner_frontend_job
+
+    - name: Copy DockerFile to workspace of frontend (Jenkins)
+      template:
+        src: "{{ workspace }}/templates/Dockerfile_frontend"
+        dest: /var/lib/jenkins/workspace/conteiner_frontend_job/Dockerfile
+    
+    - name: Copy Ansible Playbook to workspace of backend (Jenkins)
+      template:
+        src: "{{ workspace }}/templates/backend.yml"
+        dest: /var/lib/jenkins/workspace/conteiner_backend_job
+
+    - name: Copy DockerFile to workspace of backend (Jenkins)
+      template:
+        src: "{{ workspace }}/templates/Dockerfile_backend"
+        dest: /var/lib/jenkins/workspace/conteiner_backend_job/Dockerfile        
+
+    - name: Read Jankins admin password
+      command: cat /var/lib/jenkins/secrets/initialAdminPassword
+      register: adminpwd
+
+    - name: Create conteiner_backend_job from xml-file
+      jenkins_job:
+        config: "{{ lookup('file', '{{ workspace }}/templates/conteiner_backend_job.xml') }}"
+        name: conteiner_backend_job
+        password: "{{ adminpwd.stdout }}" 
+        url: http://localhost:8080
+        user: "admin"
+    
+
+    - name: Create fronend_job from xml-file
+      jenkins_job:
+        config: "{{ lookup('file', '{{ workspace }}/templates/conteiner_frontend_job.xml') }}"
+        name: conteiner_frontend_job
+        password: "{{ adminpwd.stdout }}" 
+        url: http://localhost:8080
+        user: "admin"
+
+    - name: Build job_backend
+      shell: "java -jar /var/cache/jenkins/war/WEB-INF/jenkins-cli.jar -s http://localhost:8080/ -auth admin:{{ adminpwd.stdout }} build conteiner_backend_job"
+
+    - name: Build job_frontend
+      shell: "java -jar /var/cache/jenkins/war/WEB-INF/jenkins-cli.jar -s http://localhost:8080/ -auth admin:{{ adminpwd.stdout }} build conteiner_frontend_job"
+...

@@ -1,0 +1,24 @@
+- hosts: localhost
+  become: true
+  tasks:
+    - name: Build Backend Docker image from Dockerfile
+      docker_image:
+        name: conteiner_frontend
+        tag: v1.0
+        path: /var/lib/jenkins/workspace/conteiner_frontend_job/
+        state: present  
+
+    # - name: Tag and Push Image into GCR
+    #   docker_image:
+    #     name: conteiner_frontend
+    #     repository: us.gcr.io/jenkins-docker-238718/conteiner_frontend
+    #     tag: v1.0
+    #     push: yes   
+
+    - name: run the site in a docker container
+      docker_container:
+        name: frontend
+        image: "conteiner_frontend:v1.0"
+        state: started
+        ports: 
+          - "6080:80"
